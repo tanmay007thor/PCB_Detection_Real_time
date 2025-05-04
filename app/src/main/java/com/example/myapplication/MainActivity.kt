@@ -15,6 +15,7 @@ import android.content.pm.PackageManager
 import org.pytorch.*
 import org.pytorch.torchvision.TensorImageUtils
 import java.io.*
+import org.pytorch.Module
 
 class MainActivity : AppCompatActivity() {
 
@@ -35,8 +36,8 @@ class MainActivity : AppCompatActivity() {
             ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.WRITE_EXTERNAL_STORAGE), 101)
         }
 
-        // Load model from assets
-        module = Module.load(assetFilePath(this, "yolov9_best.pt"))
+        // Load model from assetsval imageBitmap = data?.extras?.get("data") as? Bitmap
+        module = Module.load(assetFilePath(this, "best.torchscript"))
 
         val captureButton: Button = findViewById(R.id.capture_button)
         imageView = findViewById(R.id.image_view)
@@ -53,7 +54,11 @@ class MainActivity : AppCompatActivity() {
         super.onActivityResult(requestCode, resultCode, data)
 
         if (requestCode == REQUEST_IMAGE_CAPTURE && resultCode == RESULT_OK) {
-            val imageBitmap = data?.extras?.get("data") as Bitmap
+            val imageBitmap = data?.extras?.get("data") as? Bitmap
+            if (imageBitmap == null) {
+                // Log or handle the error gracefully
+                return
+            }
             saveImageToMediaStore(imageBitmap)
 
             // Resize to 640x640 for YOLOv9
@@ -67,9 +72,9 @@ class MainActivity : AppCompatActivity() {
             )
 
             // Run inference
-            val outputTuple = module.forward(IValue.from(inputTensor)).toTuple()
-            val outputTensor = outputTuple[0].toTensor()
+            val outputTensor = module.forward(IValue.from(inputTensor)).toTensor()
             val outputs = outputTensor.dataAsFloatArray
+
 
             // Draw results on canvas
             val mutableBitmap = resizedBitmap.copy(Bitmap.Config.ARGB_8888, true)
