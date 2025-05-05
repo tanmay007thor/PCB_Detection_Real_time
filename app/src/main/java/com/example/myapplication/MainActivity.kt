@@ -27,7 +27,6 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Request permissions
         if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.CAMERA), 100)
         }
@@ -36,7 +35,6 @@ class MainActivity : AppCompatActivity() {
             ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.WRITE_EXTERNAL_STORAGE), 101)
         }
 
-        // Load model from assetsval imageBitmap = data?.extras?.get("data") as? Bitmap
         module = Module.load(assetFilePath(this, "best.torchscript"))
 
         val captureButton: Button = findViewById(R.id.capture_button)
@@ -54,29 +52,21 @@ class MainActivity : AppCompatActivity() {
         super.onActivityResult(requestCode, resultCode, data)
 
         if (requestCode == REQUEST_IMAGE_CAPTURE && resultCode == RESULT_OK) {
-            val imageBitmap = data?.extras?.get("data") as? Bitmap
-            if (imageBitmap == null) {
-                // Log or handle the error gracefully
-                return
-            }
+            val imageBitmap = data?.extras?.get("data") as? Bitmap ?: return
             saveImageToMediaStore(imageBitmap)
 
-            // Resize to 640x640 for YOLOv9
             val resizedBitmap = Bitmap.createScaledBitmap(imageBitmap, 640, 640, true)
 
-            // Convert to Tensor
             val inputTensor = TensorImageUtils.bitmapToFloat32Tensor(
                 resizedBitmap,
                 TensorImageUtils.TORCHVISION_NORM_MEAN_RGB,
                 TensorImageUtils.TORCHVISION_NORM_STD_RGB
             )
 
-            // Run inference
             val outputTensor = module.forward(IValue.from(inputTensor)).toTensor()
+            val shape = outputTensor.shape()  // Should be [N, 6]
             val outputs = outputTensor.dataAsFloatArray
 
-
-            // Draw results on canvas
             val mutableBitmap = resizedBitmap.copy(Bitmap.Config.ARGB_8888, true)
             val canvas = Canvas(mutableBitmap)
             val paint = Paint().apply {
@@ -85,23 +75,32 @@ class MainActivity : AppCompatActivity() {
                 strokeWidth = 3f
             }
 
-            // Assuming output format: x, y, w, h, conf, cls
-            for (i in outputs.indices step 6) {
-                val x = outputs[i]
-                val y = outputs[i + 1]
-                val w = outputs[i + 2]
-                val h = outputs[i + 3]
-                val conf = outputs[i + 4]
+            val numDetections = shape[0].toInt()
+            val maxBoxes = 5
+            var boxCount = 0
+
+            for (i in 0 until numDetections) {
+                val offset = i * 6
+                val x1 = outputs[offset]
+                val y1 = outputs[offset + 1]
+                val x2 = outputs[offset + 2]
+                val y2 = outputs[offset + 3]
+                val conf = outputs[offset + 4]
+                val cls = outputs[offset + 5]
+
                 if (conf > 0.5f) {
-                    val left = x - w / 2
-                    val top = y - h / 2
-                    val right = x + w / 2
-                    val bottom = y + h / 2
-                    canvas.drawRect(left, top, right, bottom, paint)
+                    // Optionally scale to original image size
+                    // val scaleX = imageBitmap.width / 640f
+                    // val scaleY = imageBitmap.height / 640f
+                    // canvas.drawRect(x1 * scaleX, y1 * scaleY, x2 * scaleX, y2 * scaleY, paint)
+
+                    canvas.drawRect(x1, y1, x2, y2, paint)
+                    boxCount++
                 }
+
+                if (boxCount >= maxBoxes) break
             }
 
-            // Show result in ImageView
             imageView.setImageBitmap(mutableBitmap)
         }
     }
